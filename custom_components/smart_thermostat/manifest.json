@@ -1,11 +1,11 @@
 {
   "domain": "smart_thermostat",
   "name": "Smart thermostat",
-  "codeowners": ["@echavet"],
+  "codeowners": ["@ScratMan","@echavet"],
   "dependencies": [],
-  "documentation": "https://github.com/echavet/HASmartThermostat",
+  "documentation": "https://github.com/scratman/HASmartThermostat",
   "iot_class": "local_push",
-  "issue_tracker": "https://github.com/echavet/HASmartThermostat/issues",
+  "issue_tracker": "https://github.com/scratman/HASmartThermostat/issues",
   "requirements": [],
   "version": "2025.01.0"
 }
