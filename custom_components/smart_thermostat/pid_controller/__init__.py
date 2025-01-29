@@ -70,6 +70,8 @@ class PID:
         self._sampling_period = sampling_period
         self._cold_tolerance = cold_tolerance
         self._hot_tolerance = hot_tolerance
+        self._temp_history = deque()
+        self._time_history = deque()
 
     @property
     def mode(self):
@@ -147,8 +149,15 @@ class PID:
         self._input_time = None
         self._last_input = None
         self._last_input_time = None
-        
-    def calc(self, input_val, set_point, input_time=None, last_input_time=None, ext_temp=None):
+
+
+    def _clean_history(self, now, pwm):
+        """Remove old entries outside PWM window"""
+        while self._time_history and (now - self._time_history[0]) > pwm:
+            self._time_history.popleft()
+            self._temp_history.popleft()
+            
+    def calc(self, input_val, set_point, input_time=None, last_input_time=None, ext_temp=None, pwm=None):
         """Adjusts and holds the given setpoint.
 
         Args:
@@ -166,6 +175,18 @@ class PID:
                 time() - self._input_time < self._sampling_period:
             return self._output, False  # If last sample is too young, keep last output value
 
+        if pwm != None:
+            # Add current values to history
+            self._temp_history.append(input_val)
+
+            if input_time is None:
+                input_time = time()
+            else:
+                self._time_history.append(input_time)
+
+            # Clean old values outside PWM window
+            self._clean_history(input_time, pwm)
+            
         self._last_input = self._input
         if self._sampling_period == 0:
             self._last_input_time = last_input_time
@@ -223,15 +244,44 @@ class PID:
             self._integral = 0  # Reset integral if set point has changed as system will need to converge to a new value
 
         self._proportional = self._Kp * self._error
-        if self._dt != 0:
-            self._derivative = -(self._Kd * self._input_diff) / self._dt
+
+        if pwm == None:
+            if self._dt != 0:
+                self._derivative = -(self._Kd * self._input_diff) / self._dt
+            else:
+                self._derivative = 0.0
         else:
-            self._derivative = 0.0
+            self._derivative = self.process_derivative()
 
         # Compute PID Output
         output = self._proportional + self._integral + self._derivative + self._external
         self._output = max(min(output, self._out_max), self._out_min)
         return self._output, True
+        
+def process_derivative(self):
+        # Calculate the average derivative over the PWM window
+        if len(self._time_history) > 1:
+            total_derivative = 0
+            total_weight = 0
+
+            # Iterate through all successive pairs of points in the history
+            for i in range(1, len(self._time_history)):
+                time_diff = self._time_history[i] - self._time_history[i - 1]
+                temp_diff = self._temp_history[i] - self._temp_history[i - 1]
+
+                if time_diff > 0:  # Avoid division by zero
+                    weight = time_diff  # Weight by the duration of the interval
+                    total_derivative += (temp_diff / time_diff) * weight
+                    total_weight += weight
+
+            # Compute the weighted average derivative
+            if total_weight > 0:
+                return -(self._Kd * total_derivative) / total_weight
+            else:
+                return 0.0
+        else:
+            return 0.0
+
 
 
 # Based on a fork of Arduino PID AutoTune Library
