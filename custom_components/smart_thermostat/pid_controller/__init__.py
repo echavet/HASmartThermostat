@@ -258,7 +258,7 @@ class PID:
         self._output = max(min(output, self._out_max), self._out_min)
         return self._output, True
         
-def process_derivative(self):
+    def process_derivative(self):
         # Calculate the average derivative over the PWM window
         if len(self._time_history) > 1:
             total_derivative = 0
