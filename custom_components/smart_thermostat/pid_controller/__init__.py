@@ -181,8 +181,8 @@ class PID:
 
             if input_time is None:
                 input_time = time()
-            else:
-                self._time_history.append(input_time)
+            
+            self._time_history.append(input_time)
 
             # Clean old values outside PWM window
             self._clean_history(input_time, pwm)
