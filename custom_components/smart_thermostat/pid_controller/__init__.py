@@ -153,7 +153,7 @@ class PID:
 
     def _clean_history(self, now, pwm):
         """Remove old entries outside PWM window"""
-        while self._time_history and (now - self._time_history[0]) > (3*pwm):
+        while self._time_history and (now - self._time_history[0]) > pwm:
             self._time_history.popleft()
             self._temp_history.popleft()
             
