@@ -271,12 +271,14 @@ class PID:
 
                 if time_diff > 0:  # Avoid division by zero
                     weight = time_diff  # Weight by the duration of the interval
-                    total_derivative += (temp_diff / time_diff) * weight
+                    #total_derivative += (temp_diff / time_diff) * weight
+                    total_derivative += (temp_diff / time_diff) 
                     total_weight += weight
 
             # Compute the weighted average derivative
             if total_weight > 0:
-                return -(self._Kd * total_derivative) / total_weight
+                #return -(self._Kd * total_derivative) / total_weight
+                return -(self._Kd * total_derivative)
             else:
                 return 0.0
         else:
