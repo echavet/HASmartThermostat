@@ -246,10 +246,7 @@ class PID:
         self._proportional = self._Kp * self._error
 
         if pwm == None:
-            if self._dt != 0:
-                self._derivative = -(self._Kd * self._input_diff) / self._dt
-            else:
-                self._derivative = 0.0
+            self._derivative = self.process_simple_derivative()            
         else:
             self._derivative = self.process_derivative()
 
@@ -258,6 +255,12 @@ class PID:
         self._output = max(min(output, self._out_max), self._out_min)
         return self._output, True
         
+    def process_simple_derivative(self):        
+        if self._dt != 0:
+            return -(self._Kd * self._input_diff) / self._dt
+        else:
+            return 0.0
+                
     def process_derivative(self):
         # Calculate the average derivative over the PWM window
         if len(self._time_history) > 1:
@@ -282,7 +285,7 @@ class PID:
             else:
                 return 0.0
         else:
-            return 0.0
+            return self.process_simple_derivative()
 
 
 
