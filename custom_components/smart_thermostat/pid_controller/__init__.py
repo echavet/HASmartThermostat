@@ -260,32 +260,48 @@ class PID:
             return -(self._Kd * self._input_diff) / self._dt
         else:
             return 0.0
-                
+            
     def process_derivative(self):
+        n = len(self._time_history)
+        if n >= 2:
+            weighted_sum = 0.0
+            total_time = 0.0
+            for i in range(1, n):
+                dt = self._time_history[i] - self._time_history[i - 1]
+                if dt > 0:
+                    weighted_sum += self._temp_history[i] - self._temp_history[i - 1]
+                    total_time += dt
+            if total_time > 0:
+                derivative = weighted_sum / total_time
+                return -(self._Kd * derivative)
+            return 0.0
+        return self.process_simple_derivative()
+          
+    #def process_derivative(self):
         # Calculate the average derivative over the PWM window
-        if len(self._time_history) > 1:
-            total_derivative = 0
-            total_weight = 0
+    #    if len(self._time_history) > 1:
+    #        total_derivative = 0
+    #        total_weight = 0
 
             # Iterate through all successive pairs of points in the history
-            for i in range(1, len(self._time_history)):
-                time_diff = self._time_history[i] - self._time_history[i - 1]
-                temp_diff = self._temp_history[i] - self._temp_history[i - 1]
+    #        for i in range(1, len(self._time_history)):
+    #            time_diff = self._time_history[i] - self._time_history[i - 1]
+    #            temp_diff = self._temp_history[i] - self._temp_history[i - 1]
 
-                if time_diff > 0:  # Avoid division by zero
-                    weight = time_diff  # Weight by the duration of the interval
-                    #total_derivative += (temp_diff / time_diff) * weight
-                    total_derivative += (temp_diff / time_diff) 
-                    total_weight += weight
+    #            if time_diff > 0:  # Avoid division by zero
+    #                weight = time_diff  # Weight by the duration of the interval
+    #                #total_derivative += (temp_diff / time_diff) * weight
+    #                total_derivative += (temp_diff / time_diff) 
+    #                total_weight += weight
 
             # Compute the weighted average derivative
-            if total_weight > 0:
-                #return -(self._Kd * total_derivative) / total_weight
-                return -(self._Kd * total_derivative)
-            else:
-                return 0.0
-        else:
-            return self.process_simple_derivative()
+    #        if total_weight > 0:
+    #            #return -(self._Kd * total_derivative) / total_weight
+    #            return -(self._Kd * total_derivative)
+    #        else:
+    #            return 0.0
+    #    else:
+    #        return self.process_simple_derivative()
 
 
 
