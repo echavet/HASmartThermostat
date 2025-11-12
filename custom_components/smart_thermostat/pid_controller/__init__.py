@@ -11,36 +11,46 @@ _LOGGER = logging.getLogger(__name__)
 class PID:
     error: float
 
-    def __init__(self, kp, ki, kd, ke=0, out_min=float('-inf'), out_max=float('+inf'),
-                 sampling_period=0, cold_tolerance=0.3, hot_tolerance=0.3):
+    def __init__(
+        self,
+        kp,
+        ki,
+        kd,
+        ke=0,
+        out_min=float("-inf"),
+        out_max=float("+inf"),
+        sampling_period=0,
+        cold_tolerance=0.3,
+        hot_tolerance=0.3,
+    ):
         """A proportional-integral-derivative controller.
-            :param kp: Proportional coefficient.
-            :type kp: float
-            :param ki: Integral coefficient.
-            :type ki: float
-            :param kd: Derivative coefficient.
-            :type kd: float
-            :param ke: Outdoor temperature compensation coefficient.
-            :type ke: float
-            :param out_min: Lower output limit.
-            :type out_min: float
-            :param out_max: Upper output limit.
-            :type out_max: float
-            :param sampling_period: time period between two PID calculations in seconds
-            :type sampling_period: float
-            :param cold_tolerance: time period between two PID calculations in seconds
-            :type cold_tolerance: float
-            :param hot_tolerance: time period between two PID calculations in seconds
-            :type hot_tolerance: float
+        :param kp: Proportional coefficient.
+        :type kp: float
+        :param ki: Integral coefficient.
+        :type ki: float
+        :param kd: Derivative coefficient.
+        :type kd: float
+        :param ke: Outdoor temperature compensation coefficient.
+        :type ke: float
+        :param out_min: Lower output limit.
+        :type out_min: float
+        :param out_max: Upper output limit.
+        :type out_max: float
+        :param sampling_period: time period between two PID calculations in seconds
+        :type sampling_period: float
+        :param cold_tolerance: time period between two PID calculations in seconds
+        :type cold_tolerance: float
+        :param hot_tolerance: time period between two PID calculations in seconds
+        :type hot_tolerance: float
         """
         if kp is None:
-            raise ValueError('kp must be specified')
+            raise ValueError("kp must be specified")
         if ki is None:
-            raise ValueError('ki must be specified')
+            raise ValueError("ki must be specified")
         if kd is None:
-            raise ValueError('kd must be specified')
+            raise ValueError("kd must be specified")
         if out_min >= out_max:
-            raise ValueError('out_min must be less than out_max')
+            raise ValueError("out_min must be less than out_max")
 
         self._Kp = kp
         self._Ki = ki
@@ -66,7 +76,7 @@ class PID:
         self._proportional = 0
         self._derivative = 0
         self._external = 0
-        self._mode = 'AUTO'
+        self._mode = "AUTO"
         self._sampling_period = sampling_period
         self._cold_tolerance = cold_tolerance
         self._hot_tolerance = hot_tolerance
@@ -79,7 +89,7 @@ class PID:
 
     @mode.setter
     def mode(self, mode):
-        assert mode.upper() in ['AUTO', 'OFF']
+        assert mode.upper() in ["AUTO", "OFF"]
         self._mode = mode.upper()
 
     @property
@@ -150,14 +160,21 @@ class PID:
         self._last_input = None
         self._last_input_time = None
 
-
     def _clean_history(self, now, pwm):
         """Remove old entries outside PWM window"""
         while self._time_history and (now - self._time_history[0]) > pwm:
             self._time_history.popleft()
             self._temp_history.popleft()
-            
-    def calc(self, input_val, set_point, input_time=None, last_input_time=None, ext_temp=None, pwm=None):
+
+    def calc(
+        self,
+        input_val,
+        set_point,
+        input_time=None,
+        last_input_time=None,
+        ext_temp=None,
+        pwm=None,
+    ):
         """Adjusts and holds the given setpoint.
 
         Args:
@@ -171,9 +188,15 @@ class PID:
         Returns:
             A value between `out_min` and `out_max`.
         """
-        if self._sampling_period != 0 and self._last_input_time is not None and \
-                time() - self._input_time < self._sampling_period:
-            return self._output, False  # If last sample is too young, keep last output value
+        if (
+            self._sampling_period != 0
+            and self._last_input_time is not None
+            and time() - self._input_time < self._sampling_period
+        ):
+            return (
+                self._output,
+                False,
+            )  # If last sample is too young, keep last output value
 
         if pwm != None:
             # Add current values to history
@@ -181,12 +204,12 @@ class PID:
 
             if input_time is None:
                 input_time = time()
-            
+
             self._time_history.append(input_time)
 
             # Clean old values outside PWM window
             self._clean_history(input_time, pwm)
-            
+
         self._last_input = self._input
         if self._sampling_period == 0:
             self._last_input_time = last_input_time
@@ -203,7 +226,9 @@ class PID:
         self._last_set_point = self._set_point
         self._set_point = set_point
 
-        if self.mode == 'OFF':  # If PID is off, simply switch between min and max output
+        if (
+            self.mode == "OFF"
+        ):  # If PID is off, simply switch between min and max output
             if input_val <= set_point - self._cold_tolerance:
                 self._output = self._out_max
                 _LOGGER.debug("PID is off and input lower than set point: heater ON")
@@ -235,18 +260,23 @@ class PID:
 
         # In order to prevent windup, only integrate if the process is not saturated and set point
         # is stable
-        if self._out_min < self._last_output < self._out_max and \
-                self._last_set_point == self._set_point:
+        if (
+            self._out_min < self._last_output < self._out_max
+            and self._last_set_point == self._set_point
+        ):
             self._integral += self._Ki * self._error * self._dt
             # Take external temperature compensation into account for integral clamping
-            self._integral = max(min(self._integral, self._out_max - self._external), self._out_min - self._external)
+            self._integral = max(
+                min(self._integral, self._out_max - self._external),
+                self._out_min - self._external,
+            )
         if ext_temp is not None and self._last_set_point != self._set_point:
             self._integral = 0  # Reset integral if set point has changed as system will need to converge to a new value
 
         self._proportional = self._Kp * self._error
 
         if pwm == None:
-            self._derivative = self.process_simple_derivative()            
+            self._derivative = self.process_simple_derivative()
         else:
             self._derivative = self.process_derivative()
 
@@ -254,13 +284,13 @@ class PID:
         output = self._proportional + self._integral + self._derivative + self._external
         self._output = max(min(output, self._out_max), self._out_min)
         return self._output, True
-        
-    def process_simple_derivative(self):        
+
+    def process_simple_derivative(self):
         if self._dt != 0:
             return -(self._Kd * self._input_diff) / self._dt
         else:
             return 0.0
-            
+
     def process_derivative(self):
         n = len(self._time_history)
         if n >= 2:
@@ -276,33 +306,6 @@ class PID:
                 return -(self._Kd * derivative)
             return 0.0
         return self.process_simple_derivative()
-          
-    #def process_derivative(self):
-        # Calculate the average derivative over the PWM window
-    #    if len(self._time_history) > 1:
-    #        total_derivative = 0
-    #        total_weight = 0
-
-            # Iterate through all successive pairs of points in the history
-    #        for i in range(1, len(self._time_history)):
-    #            time_diff = self._time_history[i] - self._time_history[i - 1]
-    #            temp_diff = self._temp_history[i] - self._temp_history[i - 1]
-
-    #            if time_diff > 0:  # Avoid division by zero
-    #                weight = time_diff  # Weight by the duration of the interval
-    #                #total_derivative += (temp_diff / time_diff) * weight
-    #                total_derivative += (temp_diff / time_diff) 
-    #                total_weight += weight
-
-            # Compute the weighted average derivative
-    #        if total_weight > 0:
-    #            #return -(self._Kd * total_derivative) / total_weight
-    #            return -(self._Kd * total_derivative)
-    #        else:
-    #            return 0.0
-    #    else:
-    #        return self.process_simple_derivative()
-
 
 
 # Based on a fork of Arduino PID AutoTune Library
@@ -322,32 +325,40 @@ class PIDAutotune:
             overshoot/undershoot the setpoint before the state changes.
         time (function): A function which returns the current time in seconds.
     """
-    PIDParams = namedtuple('PIDParams', ['Kp', 'Ki', 'Kd'])
+
+    PIDParams = namedtuple("PIDParams", ["Kp", "Ki", "Kd"])
 
     PEAK_AMPLITUDE_TOLERANCE = 0.05
-    STATE_OFF = 'off'
-    STATE_RELAY_STEP_UP = 'relay step up'
-    STATE_RELAY_STEP_DOWN = 'relay step down'
-    STATE_SUCCEEDED = 'succeeded'
-    STATE_FAILED = 'failed'
+    STATE_OFF = "off"
+    STATE_RELAY_STEP_UP = "relay step up"
+    STATE_RELAY_STEP_DOWN = "relay step down"
+    STATE_SUCCEEDED = "succeeded"
+    STATE_FAILED = "failed"
 
     _tuning_rules = {
         # rule: [Kp_divisor, Ki_divisor, Kd_divisor]
         "ziegler-nichols": [34, 40, 160],
-        "tyreus-luyben": [44,  9, 126],
+        "tyreus-luyben": [44, 9, 126],
         "ciancone-marlin": [66, 88, 162],
         "pessen-integral": [28, 50, 133],
-        "some-overshoot": [60, 40,  60],
-        "no-overshoot": [100, 40,  60],
-        "brewing": [2.5, 6, 380]
+        "some-overshoot": [60, 40, 60],
+        "no-overshoot": [100, 40, 60],
+        "brewing": [2.5, 6, 380],
     }
 
-    def __init__(self, out_step=10, lookback=60,
-                 out_min=float('-inf'), out_max=float('inf'), noiseband=0.5, time_func=time):
+    def __init__(
+        self,
+        out_step=10,
+        lookback=60,
+        out_min=float("-inf"),
+        out_max=float("inf"),
+        noiseband=0.5,
+        time_func=time,
+    ):
         if out_step < 1:
-            raise ValueError('out_step must be greater or equal to 1')
+            raise ValueError("out_step must be greater or equal to 1")
         if out_min >= out_max:
-            raise ValueError('out_min must be less than out_max')
+            raise ValueError("out_min must be less than out_max")
 
         self._time = time_func
         self._sampletime = None
@@ -417,7 +428,7 @@ class PIDAutotune:
             return 0
         return self._inputs.maxlen
 
-    def get_pid_parameters(self, tuning_rule='ziegler-nichols'):
+    def get_pid_parameters(self, tuning_rule="ziegler-nichols"):
         """Get PID parameters.
 
         Args:
@@ -451,31 +462,44 @@ class PIDAutotune:
             self._last_sample_time = now
             if len(self._sample_time_calc) < self._inputs.maxlen:
                 return False
-            self._sampletime = sum(self._sample_time_calc[5::]) / len(self._sample_time_calc[5::])
+            self._sampletime = sum(self._sample_time_calc[5::]) / len(
+                self._sample_time_calc[5::]
+            )
             self._setpoint = set_point
             self._inputs = deque(maxlen=round(self._lookback / self._sampletime))
-            self._inputs_timestamps = deque(maxlen=round(self._lookback / self._sampletime))
+            self._inputs_timestamps = deque(
+                maxlen=round(self._lookback / self._sampletime)
+            )
 
-        if self._state in [PIDAutotune.STATE_OFF, PIDAutotune.STATE_SUCCEEDED,
-                           PIDAutotune.STATE_FAILED]:
+        if self._state in [
+            PIDAutotune.STATE_OFF,
+            PIDAutotune.STATE_SUCCEEDED,
+            PIDAutotune.STATE_FAILED,
+        ]:
             self._initTuner(input_val, now)
-        elif (now - self._last_run_timestamp) < self._sampletime - 0.90:  # keep a 10% margin
+        elif (
+            now - self._last_run_timestamp
+        ) < self._sampletime - 0.90:  # keep a 10% margin
             return False
 
         # check input and change relay state if necessary
-        if (self._state == PIDAutotune.STATE_RELAY_STEP_UP
-                and input_val > self._setpoint + self._noiseband):
+        if (
+            self._state == PIDAutotune.STATE_RELAY_STEP_UP
+            and input_val > self._setpoint + self._noiseband
+        ):
             self._state = PIDAutotune.STATE_RELAY_STEP_DOWN
-            _LOGGER.debug('switched state: %s', self._state)
-            _LOGGER.debug('input: %.1f', input_val)
-        elif (self._state == PIDAutotune.STATE_RELAY_STEP_DOWN
-                and input_val < self._setpoint - self._noiseband):
+            _LOGGER.debug("switched state: %s", self._state)
+            _LOGGER.debug("input: %.1f", input_val)
+        elif (
+            self._state == PIDAutotune.STATE_RELAY_STEP_DOWN
+            and input_val < self._setpoint - self._noiseband
+        ):
             self._state = PIDAutotune.STATE_RELAY_STEP_UP
-            _LOGGER.debug('switched state: %s', self._state)
-            _LOGGER.debug('input: %.1f', input_val)
+            _LOGGER.debug("switched state: %s", self._state)
+            _LOGGER.debug("input: %.1f", input_val)
 
         # set output
-        if (self._state == PIDAutotune.STATE_RELAY_STEP_UP):
+        if self._state == PIDAutotune.STATE_RELAY_STEP_UP:
             self._output = self._initial_output + self._outputstep
         elif self._state == PIDAutotune.STATE_RELAY_STEP_DOWN:
             self._output = self._initial_output - self._outputstep
@@ -502,7 +526,6 @@ class PIDAutotune:
 
         return self.analysis()
         # increment peak count and record peak time for maxima and minima
-
 
     def _initTuner(self, inputValue, timestamp):
         self._peak_type = 0
@@ -549,8 +572,8 @@ class PIDAutotune:
                 self._peak_count += 1
                 self._peaks.append(input_val)
                 self._peak_timestamps.append(now)
-                _LOGGER.debug('found peak: %.1f', input_val)
-                _LOGGER.debug('peak count: %i', self._peak_count)
+                _LOGGER.debug("found peak: %.1f", input_val)
+                _LOGGER.debug("peak count: %i", self._peak_count)
 
             # check for convergence of induced oscillation
             # convergence of amplitude assessed on last 4 peaks (1.5 cycles)
@@ -560,18 +583,19 @@ class PIDAutotune:
                 abs_max = self._peaks[-2]
                 abs_min = self._peaks[-2]
                 for i in range(0, len(self._peaks) - 2):
-                    self._induced_amplitude += abs(self._peaks[i] - self._peaks[i+1])
+                    self._induced_amplitude += abs(self._peaks[i] - self._peaks[i + 1])
                     abs_max = max(self._peaks[i], abs_max)
                     abs_min = min(self._peaks[i], abs_min)
 
                 self._induced_amplitude /= 6.0
 
                 # check convergence criterion for amplitude of induced oscillation
-                amplitude_dev = ((0.5 * (abs_max - abs_min) - self._induced_amplitude)
-                                 / self._induced_amplitude)
+                amplitude_dev = (
+                    0.5 * (abs_max - abs_min) - self._induced_amplitude
+                ) / self._induced_amplitude
 
-                _LOGGER.debug('amplitude: %.2f', self._induced_amplitude)
-                _LOGGER.debug('amplitude deviation: %.2f', amplitude_dev)
+                _LOGGER.debug("amplitude: %.2f", self._induced_amplitude)
+                _LOGGER.debug("amplitude deviation: %.2f", amplitude_dev)
 
                 if amplitude_dev < PIDAutotune.PEAK_AMPLITUDE_TOLERANCE:
                     self._state = PIDAutotune.STATE_SUCCEEDED

@@ -75,6 +75,7 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
         vol.Required(const.CONF_INVERT_HEATER, default=False): cv.boolean,
         vol.Required(const.CONF_SENSOR): cv.entity_id,
         vol.Optional(const.CONF_OUTDOOR_SENSOR): cv.entity_id,
+        vol.Optional(const.CONF_WINDOW_SENSOR): cv.entity_id,
         vol.Optional(const.CONF_AC_MODE): cv.boolean,
         vol.Optional(const.CONF_FORCE_OFF_STATE, default=True): cv.boolean,
         vol.Optional(const.CONF_MAX_TEMP): vol.Coerce(float),
@@ -156,6 +157,7 @@ async def async_setup_platform(hass, config, async_add_entities, discovery_info=
         'invert_heater': config.get(const.CONF_INVERT_HEATER),
         'sensor_entity_id': config.get(const.CONF_SENSOR),
         'ext_sensor_entity_id': config.get(const.CONF_OUTDOOR_SENSOR),
+        'window_sensor_entity_id': config.get(const.CONF_WINDOW_SENSOR),
         'min_temp': config.get(const.CONF_MIN_TEMP),
         'max_temp': config.get(const.CONF_MAX_TEMP),
         'target_temp': config.get(const.CONF_TARGET_TEMP),
@@ -259,6 +261,8 @@ class SmartThermostat(ClimateEntity, RestoreEntity, ABC):
         self._heater_polarity_invert = kwargs.get('invert_heater')
         self._sensor_entity_id = kwargs.get('sensor_entity_id')
         self._ext_sensor_entity_id = kwargs.get('ext_sensor_entity_id')
+        self._window_sensor_entity_id = kwargs.get('window_sensor_entity_id', None)
+        self._window_open = False
         if self._unique_id == 'none':
             self._unique_id = slugify(f"{DOMAIN}_{self._name}_{self._heater_entity_id}")
         self._ac_mode = kwargs.get('ac_mode', False)
@@ -393,6 +397,12 @@ class SmartThermostat(ClimateEntity, RestoreEntity, ABC):
                     self.hass,
                     self._ext_sensor_entity_id,
                     self._async_ext_sensor_changed))
+        if self._window_sensor_entity_id is not None:
+            self.async_on_remove(
+                async_track_state_change_event(
+                    self.hass,
+                    self._window_sensor_entity_id,
+                    self._async_window_sensor_changed))
         self.async_on_remove(
             async_track_state_change_event(
                 self.hass,
@@ -421,6 +431,10 @@ class SmartThermostat(ClimateEntity, RestoreEntity, ABC):
                 ext_sensor_state = self.hass.states.get(self._ext_sensor_entity_id)
                 if ext_sensor_state and ext_sensor_state.state != STATE_UNKNOWN:
                     self._async_update_ext_temp(ext_sensor_state)
+            if self._window_sensor_entity_id is not None:
+                window_state = self.hass.states.get(self._window_sensor_entity_id)
+                if window_state and window_state.state != STATE_UNKNOWN:
+                    self._window_open = self._is_window_open_state(window_state.state)
 
         if self.hass.state == CoreState.running:
             _async_startup()
@@ -676,6 +690,7 @@ class SmartThermostat(ClimateEntity, RestoreEntity, ABC):
             "ke": self._ke,
             "pid_mode": self.pid_mode,
             "pid_i": 0 if self._autotune != "none" else self.pid_control_i,
+            "window_open": self._window_open,
         }
         if self._debug:
             device_state_attributes.update({
@@ -862,6 +877,37 @@ class SmartThermostat(ClimateEntity, RestoreEntity, ABC):
         self._trigger_source = 'ext_sensor'
         _LOGGER.debug("%s: Received new external temperature: %s", self.entity_id, self._ext_temp)
         await self._async_control_heating(calc_pid=False)
+
+    def _is_window_open_state(self, state: str) -> bool:
+        """Return True if window sensor indicates open."""
+        return state in [STATE_ON, 'open']
+
+    @callback
+    async def _async_window_sensor_changed(self, event: Event[EventStateChangedData]):
+        """Handle window sensor state changes."""
+        new_state = event.data["new_state"]
+        if new_state is None:
+            return
+        prev_open = self._window_open
+        self._window_open = self._is_window_open_state(new_state.state)
+        _LOGGER.info(
+            "%s: Window sensor changed: %s",
+            self.entity_id,
+            "OPEN" if self._window_open else "CLOSED"
+        )
+        if self._window_open:
+            # Immediately cut output without changing thermostat mode
+            if self._pwm:
+                await self._async_heater_turn_off(force=True)
+            else:
+                await self._async_set_valve_value(self._output_min)
+        else:
+            # Window closed: reset integral term to avoid windup effects
+            if self._pid_controller is not None:
+                self._pid_controller.integral = 0.0
+                self._i = self._pid_controller.integral
+        await self._async_control_heating(calc_pid=True)
+        self.async_write_ha_state()
 
     @callback
     def _async_switch_changed(self, event: Event[EventStateChangedData]):
@@ -1123,6 +1169,18 @@ class SmartThermostat(ClimateEntity, RestoreEntity, ABC):
 
     async def set_control_value(self):
         """Set Output value for heater"""
+        # If a window sensor is defined and the window is open, cut the output without changing thermostat state
+        if getattr(self, "_window_open", False):
+            if self._pwm:
+                if self._is_device_active:
+                    _LOGGER.info("%s: Window open -> turning OFF %s", self.entity_id,
+                                 ", ".join([entity for entity in self.heater_or_cooler_entity]))
+                await self._async_heater_turn_off()
+            else:
+                _LOGGER.info("%s: Window open -> setting output to 0 for %s", self.entity_id,
+                             ", ".join([entity for entity in self.heater_or_cooler_entity]))
+                await self._async_set_valve_value(self._output_min)
+            return
         if self._pwm:
             if abs(self._control_output) == self._difference:
                 if not self._is_device_active:
